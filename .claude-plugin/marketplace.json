@@ -1,0 +1,14 @@
+{
+  "name": "tripodpy-skill",
+  "owner": {
+    "name": "Nicolas Kaufmann",
+    "email": "n.kaufmann@lmu.de"
+  },
+  "plugins": [
+    {
+      "name": "tripodpy",
+      "source": "./",
+      "description": "Set up, run, customise and analyse TriPoDPy dust-evolution simulations (incl. compositional tracking)."
+    }
+  ]
+}

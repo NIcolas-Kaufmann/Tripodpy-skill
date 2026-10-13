@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_tripodpy.py — tripodpy launch script for the simulation agent.
+run_tripodpy.py — TriPoDPy launch script for the simulation agent.
 
 Usage (local):
     python run_tripodpy.py --run_dir runs/my_run [options]
@@ -14,7 +14,11 @@ Output (stdout, last line):
     ERROR   message=<description>
 
 All physical parameters must be in CGS unless the argument name ends in
-a unit suffix (_msun, _au, _yr, _mearth) — those are converted internally.
+a unit suffix (_msun, _rsun, _au, _yr, _cms, _cm, _g) — those are converted internally.
+
+TriPoDPy has no mass grid: there are always 2 surface-density populations
+and 5 characteristic sizes. ``mmin_g`` only sets the minimum particle size
+s_min = (3 mmin / (4 pi rho_s))^(1/3).
 """
 
 import argparse
@@ -32,7 +36,7 @@ import numpy as np
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Launch a tripodpy dust-evolution simulation.")
+    p = argparse.ArgumentParser(description="Launch a TriPoDPy dust-evolution simulation.")
 
     # --- run control ---
     p.add_argument(
@@ -72,15 +76,13 @@ def parse_args():
     p.add_argument("--nr", type=int, default=100)
     p.add_argument("--rmin_au", type=float, default=1.0)
     p.add_argument("--rmax_au", type=float, default=1000.0)
-    p.add_argument("--nmbpd", type=int, default=7, help="Mass bins per decade; minimum 7.")
-    p.add_argument("--mmin_g", type=float, default=1e-12)
-    p.add_argument("--mmax_g", type=float, default=1e5)
+    p.add_argument("--mmin_g", type=float, default=1e-12, help="Minimum particle mass [g]; sets s_min.")
 
     # --- gas ---
     p.add_argument("--alpha", type=float, default=1e-3)
     p.add_argument("--mdisk_msun", type=float, default=0.05)
     p.add_argument("--sigma_exp", type=float, default=-1.0)
-    p.add_argument("--sigma_rc_au", type=float, default=30.0)
+    p.add_argument("--sigma_rc_au", type=float, default=60.0)
 
     # --- dust ---
     p.add_argument("--d2g", type=float, default=0.01)
@@ -95,7 +97,12 @@ def parse_args():
         "--a_ini_max_cm",
         type=float,
         default=1e-4,
-        help="Max initial grain size [cm] (default 1 µm).",
+        help="Initial maximum particle size s_max [cm] (default 1 µm).",
+    )
+    p.add_argument(
+        "--allow_drifting",
+        action="store_true",
+        help="Set ini.dust.allowDriftingParticles=True (default False).",
     )
 
     # --- time ---
@@ -117,9 +124,7 @@ KNOWN_JSON_KEYS = {
     "nr",
     "rmin_au",
     "rmax_au",
-    "nmbpd",
     "mmin_g",
-    "mmax_g",
     "alpha",
     "mdisk_msun",
     "sigma_exp",
@@ -128,6 +133,7 @@ KNOWN_JSON_KEYS = {
     "vfrag_cms",
     "rho_monomer",
     "a_ini_max_cm",
+    "allow_drifting",
     "t_start_yr",
     "t_end_yr",
     "snaps_per_decade",
@@ -204,17 +210,14 @@ def write_slurm_script(args, params_json: str, run_dir: str) -> str:
 
 def validate_params(args):
     errors = []
-    if args.nmbpd < 7:
-        errors.append(
-            f"nmbpd={args.nmbpd} < 7 — required for accurate "
-            f"coagulation (Drążkowska et al. 2014)"
-        )
     if args.rmin_au <= 0 or args.rmax_au <= args.rmin_au:
         errors.append(f"Invalid grid: rmin={args.rmin_au} AU, " f"rmax={args.rmax_au} AU")
     if args.t_end_yr <= args.t_start_yr:
         errors.append(f"t_end_yr={args.t_end_yr} must be > " f"t_start_yr={args.t_start_yr}")
-    if args.mmin_g <= 0 or args.mmax_g <= args.mmin_g:
-        errors.append(f"Invalid mass grid: mmin={args.mmin_g} g, " f"mmax={args.mmax_g} g")
+    if args.mmin_g <= 0:
+        errors.append(f"mmin_g={args.mmin_g} must be positive")
+    if args.t_start_yr <= 0:
+        errors.append(f"t_start_yr={args.t_start_yr} must be > 0 (log-spaced snapshots)")
     if args.alpha <= 0 or args.alpha > 0.1:
         errors.append(f"alpha={args.alpha} out of physical range (0, 0.1]")
     if args.vfrag_cms <= 0:
@@ -231,8 +234,8 @@ def validate_params(args):
 
 
 def build_and_run(args):
-    from dustpy import Simulation
-    from dustpy import constants as c
+    from tripodpy import Simulation, readdump
+    from tripodpy import constants as c
 
     run_dir = os.path.abspath(args.run_dir)
     datadir = os.path.join(run_dir, "data")
@@ -249,9 +252,7 @@ def build_and_run(args):
     sim.ini.grid.Nr = args.nr
     sim.ini.grid.rmin = args.rmin_au * c.au
     sim.ini.grid.rmax = args.rmax_au * c.au
-    sim.ini.grid.Nmbpd = args.nmbpd
     sim.ini.grid.mmin = args.mmin_g
-    sim.ini.grid.mmax = args.mmax_g
 
     # gas
     sim.ini.gas.alpha = args.alpha
@@ -264,6 +265,7 @@ def build_and_run(args):
     sim.ini.dust.vFrag = args.vfrag_cms
     sim.ini.dust.rhoMonomer = args.rho_monomer
     sim.ini.dust.aIniMax = args.a_ini_max_cm
+    sim.ini.dust.allowDriftingParticles = bool(args.allow_drifting)
 
     # write a manifest so analysis workflow never depends on AGENTS.md alone
     manifest = {
@@ -277,7 +279,8 @@ def build_and_run(args):
             "nr": args.nr,
             "rmin_au": args.rmin_au,
             "rmax_au": args.rmax_au,
-            "nmbpd": args.nmbpd,
+            "mmin_g": args.mmin_g,
+            "a_ini_max_cm": args.a_ini_max_cm,
             "d2g": args.d2g,
             "vfrag_cms": args.vfrag_cms,
             "t_start_yr": args.t_start_yr,
@@ -298,7 +301,17 @@ def build_and_run(args):
         )
         return
 
+    snapshots = (
+        np.geomspace(
+            args.t_start_yr,
+            args.t_end_yr,
+            num=int(args.snaps_per_decade * np.log10(args.t_end_yr / args.t_start_yr)) + 1,
+        )
+        * c.year
+    )
+
     if args.resume:
+        # Dump files are pickles: only load dumps you created yourself.
         dump_path = os.path.join(datadir, "frame.dmp")
         if not os.path.exists(dump_path):
             print(
@@ -306,27 +319,28 @@ def build_and_run(args):
                 flush=True,
             )
             sys.exit(1)
-        sim.initialize()
-        sim.load(dump_path)
+        sim = readdump(dump_path)  # restores the full frame incl. writer
+        sim.writer.datadir = datadir
+        # Append new snapshot times to the existing ones: simframe numbers the
+        # output files by their index in sim.t.snapshots, so replacing the
+        # array would restart at data0000.hdf5 and collide with existing files.
+        old = np.asarray(sim.t.snapshots)
+        t_now = max(float(sim.t), float(old.max()))
+        t_end = args.t_end_yr * c.year
+        if t_end > t_now:
+            num = max(int(args.snaps_per_decade * np.log10(t_end / t_now)), 1) + 1
+            sim.t.snapshots = np.concatenate([old, np.geomspace(t_now, t_end, num=num)[1:]])
+        if not np.any(sim.t.snapshots > sim.t):
+            print(f"ERROR message=Dump is already at t={float(sim.t)/c.year:.4g} yr >= t_end_yr", flush=True)
+            sys.exit(1)
     else:
         sim.initialize()
-
-    # writer and snapshots — both must be set after initialize()
-    sim.writer.datadir = datadir
-    sim.writer.overwrite = args.overwrite
-
-    # snapshots — must be set after initialize() (sim.t is None before)
-    sim.t.snapshots = np.hstack(
-        [
-            sim.t,
-            np.geomspace(
-                args.t_start_yr,
-                args.t_end_yr,
-                num=int(args.snaps_per_decade * np.log10(args.t_end_yr / args.t_start_yr)) + 1,
-            )
-            * c.year,
-        ]
-    )
+        # writer and snapshots are set AFTER initialize(): sim.writer is None
+        # and sim.t does not exist before it
+        sim.writer.datadir = datadir
+        sim.writer.overwrite = args.overwrite
+        # include t=0 so data0000.hdf5 holds the initial condition
+        sim.t.snapshots = np.hstack([sim.t, snapshots])
 
     t0 = time.perf_counter()
     sim.run()
@@ -386,9 +400,7 @@ def main():
         "nr",
         "rmin_au",
         "rmax_au",
-        "nmbpd",
         "mmin_g",
-        "mmax_g",
         "alpha",
         "mdisk_msun",
         "sigma_exp",
@@ -397,6 +409,7 @@ def main():
         "vfrag_cms",
         "rho_monomer",
         "a_ini_max_cm",
+        "allow_drifting",
         "t_start_yr",
         "t_end_yr",
         "snaps_per_decade",

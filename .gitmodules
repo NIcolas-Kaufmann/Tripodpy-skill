@@ -1,3 +1,0 @@
-[submodule "src/tripodpy"]
-	path = src/tripodpy
-	url = https://github.com/tripod-code/tripodpy.git

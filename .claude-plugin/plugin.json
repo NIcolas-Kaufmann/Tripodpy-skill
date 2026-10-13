@@ -1,1 +1,19 @@
-{"name": "tripodpy", "description": "Expert skill for setting up, running, and analysing DustPy simulations of dust evolution in protoplanetary disks. Use this skill whenever the user mentions DustPy, dust grain growth, fragmentation, radial drift, Smoluchowski equation, dust-to-gas ratio evolution, or wants to run/configure/analyse a dust evolution simulation. Also triggers for: customising DustPy physics (ice lines, planetary gaps, planetesimal formation, custom coagulation kernels), reading DustPy HDF5 output, diagnosing DustPy "}
+{
+  "name": "tripodpy",
+  "description": "Expert skill for setting up, running, and analysing TriPoDPy simulations of dust evolution in protoplanetary disks (TriPoD tri-population dust model, Pfeil et al. 2024): grain growth, fragmentation, radial drift, dust-to-gas ratio, maximum particle size. Covers customising physics (ice lines, planetary gaps, sources/sinks, boundaries), compositional tracking with addcomponent (tracers, dust species, sublimation/condensation), reading TriPoDPy HDF5 output, plotting, and diagnosing runs.",
+  "author": {
+    "name": "Nicolas Kaufmann",
+    "email": "n.kaufmann@lmu.de"
+  },
+  "homepage": "https://github.com/NIcolas-Kaufmann/Tripodpy-skill",
+  "repository": "https://github.com/NIcolas-Kaufmann/Tripodpy-skill",
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "tripodpy",
+    "dustpy",
+    "protoplanetary-disks",
+    "dust-evolution",
+    "astrophysics",
+    "simulation"
+  ]
+}
